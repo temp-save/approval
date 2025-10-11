@@ -2,5 +2,112 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 
 <mapper namespace="com.approval.project.mapper.ApprovalMapper">
+	<sql id="searchWhere">
+		WHERE 1 = 1
+			<choose>
+		 		<when test="userLevel == 3">
+		 		 	AND (al.writer_id = #{userId} 
+	 						OR (p.level_no &lt; 3 AND (al.status_code = 'REJ' OR al.status_code = 'PND'))
+		 					OR ((al.status_code = 'APR' OR al.status_code = 'CMP') AND (SELECT proc_id FROM approval_history WHERE status_code = al.status_code AND approval_num = al.num) = #{userId}))
+		 		</when>
+		 		<when test="userLevel == 4">
+		 			AND (al.status_code = 'APR'
+		 					OR al.status_code = 'CMP'
+		 					OR (al.status_code = 'REJ' AND (SELECT position_cd FROM approval_history WHERE status_code = al.status_code AND approval_num = al.num) = 'pm'))
+		 		</when>
+		 		<otherwise>
+		 			AND al.writer_id = #{userId}
+		 		</otherwise>
+		 	</choose>
+	</sql>
+	
+	<select id="getApprovalList" resultType="com.approval.project.model.ApprovalResponseDTO">
+		SELECT al.num AS num
+			 , al.writer_id AS writerId
+			 , ae.emp_name AS empName
+			 , al.title AS title
+			 , al.content AS content
+			 , al.reg_date AS regDate
+			 , al.appr_date AS apprDate
+			 , al.approver_id AS approverId
+			 , al.status_code AS statusCode
+			 , (SELECT status_name FROM approval_status WHERE status_code = al.status_code) AS statusName
+			 , p.level_no AS writerPositionLevel
+		  FROM approval_list al
+		 INNER JOIN approval_emp ae ON ae.user_id = al.writer_id
+		 INNER JOIN positions p ON p.position_cd = ae.position_cd
+		 	<include refid="searchWhere"></include>
+		 ORDER BY al.num DESC
+		 LIMIT #{size} OFFSET #{offset}
+	</select>
+	
+	<select id="getApprovalTotalCnt" resultType="int">
+		SELECT COUNT(al.num)
+		  FROM approval_list al
+		 INNER JOIN approval_emp ae ON ae.user_id = al.writer_id
+		 INNER JOIN positions p ON p.position_cd = ae.position_cd
+		 	<include refid="searchWhere"></include>
+	</select>
 
+	<select id="getApprovalAllCnt" resultType="int">
+		SELECT COUNT(num)
+		  FROM approval_list
+	</select>
+
+	<select id="getApprovalDetail" resultType="com.approval.project.model.ApprovalResponseDTO">
+		SELECT al.num AS num
+			 , al.writer_id AS writerId
+			 , ae.emp_name AS empName
+			 , al.title AS title
+			 , al.content AS content
+			 , al.reg_date AS regDate
+			 , al.appr_date AS apprDate
+			 , al.approver_id AS approverId
+			 , al.status_code AS statusCode
+			 , (SELECT status_name FROM approval_status WHERE status_code = al.status_code) AS statusName
+			 , (SELECT level_no FROM positions WHERE position_cd = ae.position_cd) AS writerPositionLevel
+		  FROM approval_list al
+		 INNER JOIN approval_emp ae ON ae.user_id = al.writer_id
+		 WHERE al.num = #{num}
+	</select>
+	
+	
+	<insert id="saveApprovalList" parameterType="com.approval.project.model.ApprovalSaveRequestDTO"
+            useGeneratedKeys="true"
+            keyProperty="num">
+    	INSERT INTO approval_list (
+    		writer_id
+    	  , title
+    	  , content
+    	  , reg_date
+    	  , status_code
+    	) VALUES (
+    		#{writerId}
+    	  ,	#{title}
+    	  ,	#{content}
+    	  ,	NOW()
+    	  ,	#{statusCode}
+    	)
+    </insert>
+
+	<update id="updateApprovalList" parameterType="com.approval.project.model.ApprovalSaveRequestDTO">
+    	UPDATE approval_list
+    	   SET approver_id = #{writerId}
+    	     , status_code = #{statusCode}
+    	  <choose>
+    	    <when test="beforeStatusCode != null and (beforeStatusCode == 'TMP' or beforeStatusCode == 'REJ')">
+    	     , title = #{title}
+    	     , content = #{content}
+    	    </when>
+    	    <otherwise>
+    	     , appr_date = NOW()
+    	    </otherwise>
+    	  </choose>
+    	 WHERE num = #{num}
+    </update>
+	
+	<select id="getNextNum" resultType="int">
+		SELECT IFNULL(max(num), 0) + 1
+		  FROM approval_list
+	</select>
 </mapper>
